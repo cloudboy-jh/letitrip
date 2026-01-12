@@ -1,3 +1,5 @@
+//go:build !windows
+
 package disc
 
 import (
@@ -8,17 +10,6 @@ import (
 	"strconv"
 	"strings"
 )
-
-type TrackTOC struct {
-	Number    int
-	StartLBA  int
-	LengthLBA int
-}
-
-type TOC struct {
-	Tracks     []TrackTOC
-	LeadoutLBA int
-}
 
 var (
 	trackLine = regexp.MustCompile(`track\s+(\d+):\s+(\d+)\s+\[[^\]]+\]\s+(\d+)\s+\[[^\]]+\]`)

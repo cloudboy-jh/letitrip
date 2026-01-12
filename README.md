@@ -15,16 +15,22 @@ letitrip is a two-part system for ripping CD collections to lossless audio and s
 
 ### Windows Ripper
 
+**Installation:**
+
 ```powershell
+# Install letitrip
 go install github.com/cloudboy-jh/letitrip/letitrip@latest
-letitrip
+
+# Install FLAC tools (required for encoding and tagging)
+winget install FLAC
 ```
 
-Requirements:
+**Requirements:**
 
-- Go 1.21+ (for installation)
-- `cdparanoia` (CD ripping)
-- `flac` + `metaflac` (encoding and tags)
+- Go 1.21+ (for installation only)
+- FLAC tools (flac.exe + metaflac.exe) - installed via winget or from [https://xiph.org/flac/download.html](https://xiph.org/flac/download.html)
+
+**Note:** The Windows version uses native Windows CD-ROM APIs for disc reading and ripping - no external CD ripping tools needed!
 
 ### Raspberry Pi Server
 
