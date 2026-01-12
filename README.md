@@ -18,11 +18,17 @@ letitrip is a two-part system for ripping CD collections to lossless audio and s
 **Installation:**
 
 ```powershell
-# Install letitrip
+# Install letitrip (force clean install)
+go clean -cache -modcache -i github.com/cloudboy-jh/letitrip/letitrip
 go install github.com/cloudboy-jh/letitrip/letitrip@latest
 
 # Install FLAC tools (required for encoding and tagging)
-winget install FLAC
+winget install Xiph.FLAC
+```
+
+If `letitrip` is not in your PATH, add `%USERPROFILE%\go\bin` to your system PATH or run:
+```powershell
+$env:Path += ";$env:USERPROFILE\go\bin"
 ```
 
 **Requirements:**
@@ -38,6 +44,34 @@ winget install FLAC
 curl -fsSL https://raw.githubusercontent.com/cloudboy-jh/letitrip/main/server/setup.sh | bash
 sudo mount /dev/sda1 /mnt/music
 cd /opt/letitrip && docker compose up -d
+```
+
+## Troubleshooting
+
+**"executable file not found" or "cdparanoia not found":**
+
+This means `go install` grabbed an old cached version. Force a clean reinstall:
+
+```powershell
+# Remove cached version
+go clean -i github.com/cloudboy-jh/letitrip/letitrip
+
+# Clear Go module cache
+go clean -modcache
+
+# Reinstall from latest source
+go install github.com/cloudboy-jh/letitrip/letitrip@latest
+
+# Verify Windows version is installed
+where letitrip
+# Should show: C:\Users\<YourName>\go\bin\letitrip.exe
+```
+
+**"letitrip is not recognized":**
+
+Add Go's bin directory to your PATH:
+```powershell
+$env:Path += ";$env:USERPROFILE\go\bin"
 ```
 
 ## Usage
