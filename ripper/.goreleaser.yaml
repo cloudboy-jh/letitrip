@@ -1,0 +1,20 @@
+project_name: letitrip
+
+builds:
+  - id: letitrip
+    main: ./main.go
+    binary: letitrip
+    goos:
+      - windows
+    goarch:
+      - amd64
+
+archives:
+  - id: windows
+    builds:
+      - letitrip
+    format: zip
+    name_template: "{{ .ProjectName }}_windows_amd64"
+
+release:
+  draft: true
