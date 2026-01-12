@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/USERNAME/letitrip/ripper/internal/config"
-	"github.com/USERNAME/letitrip/ripper/internal/disc"
-	"github.com/USERNAME/letitrip/ripper/internal/encode"
-	"github.com/USERNAME/letitrip/ripper/internal/metadata"
+	"github.com/cloudboy-jh/letitrip/ripper/internal/config"
+	"github.com/cloudboy-jh/letitrip/ripper/internal/disc"
+	"github.com/cloudboy-jh/letitrip/ripper/internal/encode"
+	"github.com/cloudboy-jh/letitrip/ripper/internal/metadata"
 )
 
 func RipAndOrganize(drive string, cfg config.Config, toc disc.TOC, release metadata.Release) error {

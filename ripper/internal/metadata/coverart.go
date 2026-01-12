@@ -14,7 +14,7 @@ func FetchCoverArt(releaseID string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Set("User-Agent", "letitrip/0.1 (https://github.com/USERNAME/letitrip)")
+	request.Header.Set("User-Agent", "letitrip/0.1 (https://github.com/cloudboy-jh/letitrip)")
 
 	response, err := client.Do(request)
 	if err != nil {

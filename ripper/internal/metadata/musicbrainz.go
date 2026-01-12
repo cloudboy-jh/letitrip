@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/USERNAME/letitrip/ripper/internal/disc"
+	"github.com/cloudboy-jh/letitrip/ripper/internal/disc"
 )
 
 type discResponse struct {
@@ -44,7 +44,7 @@ func FetchDiscMetadata(discID string) (Release, error) {
 	if err != nil {
 		return Release{}, err
 	}
-	request.Header.Set("User-Agent", "letitrip/0.1 (https://github.com/USERNAME/letitrip)")
+	request.Header.Set("User-Agent", "letitrip/0.1 (https://github.com/cloudboy-jh/letitrip)")
 
 	response, err := client.Do(request)
 	if err != nil {

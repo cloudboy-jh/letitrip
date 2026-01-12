@@ -186,7 +186,7 @@ Config stored at: `%APPDATA%/letitrip/config.json`
 
 ```bash
 # One-line install on Pi
-curl -fsSL https://raw.githubusercontent.com/USERNAME/letitrip/main/server/setup.sh | bash
+curl -fsSL https://raw.githubusercontent.com/cloudboy-jh/letitrip/main/server/setup.sh | bash
 ```
 
 ### Docker Compose
@@ -299,7 +299,7 @@ letitrip/
 
 **Option A: PowerShell installer**
 ```powershell
-irm https://raw.githubusercontent.com/USERNAME/letitrip/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/cloudboy-jh/letitrip/main/install.ps1 | iex
 ```
 
 **Option B: Manual download**
@@ -312,7 +312,7 @@ irm https://raw.githubusercontent.com/USERNAME/letitrip/main/install.ps1 | iex
 
 ```bash
 # SSH into your Pi, then:
-curl -fsSL https://raw.githubusercontent.com/USERNAME/letitrip/main/server/setup.sh | bash
+curl -fsSL https://raw.githubusercontent.com/cloudboy-jh/letitrip/main/server/setup.sh | bash
 
 # Mount your external HDD
 sudo mount /dev/sda1 /mnt/music

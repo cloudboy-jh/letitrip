@@ -1,6 +1,6 @@
 param(
   [string]$InstallDir = "$env:LOCALAPPDATA\letitrip\bin",
-  [string]$Repo = "USERNAME/letitrip",
+  [string]$Repo = "cloudboy-jh/letitrip",
   [string]$Version = "latest"
 )
 

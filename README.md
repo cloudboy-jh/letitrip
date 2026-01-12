@@ -16,11 +16,9 @@ letitrip is a two-part system for ripping CD collections to lossless audio and s
 ### Windows Ripper
 
 ```powershell
-irm https://raw.githubusercontent.com/USERNAME/letitrip/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/cloudboy-jh/letitrip/main/install.ps1 | iex
 letitrip
 ```
-
-Replace `USERNAME` with your GitHub org/user.
 
 Requirements:
 
@@ -30,7 +28,7 @@ Requirements:
 ### Raspberry Pi Server
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/USERNAME/letitrip/main/server/setup.sh | bash
+curl -fsSL https://raw.githubusercontent.com/cloudboy-jh/letitrip/main/server/setup.sh | bash
 sudo mount /dev/sda1 /mnt/music
 cd /opt/letitrip && docker compose up -d
 ```
