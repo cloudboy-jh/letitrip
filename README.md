@@ -15,25 +15,35 @@ letitrip is a two-part system for ripping CD collections to lossless audio and s
 
 ### Windows Ripper
 
-**Installation:**
+**Quick Install (Recommended):**
 
 ```powershell
-# Install letitrip (force clean install)
-go clean -cache -modcache -i github.com/cloudboy-jh/letitrip/letitrip
-go install github.com/cloudboy-jh/letitrip/letitrip@latest
-
-# Install FLAC tools (required for encoding and tagging)
-winget install Xiph.FLAC
+# One-line installer
+irm https://raw.githubusercontent.com/cloudboy-jh/letitrip/main/install.ps1 | iex
 ```
 
-If `letitrip` is not in your PATH, add `%USERPROFILE%\go\bin` to your system PATH or run:
+This will:
+- Download the latest `letitrip.exe` 
+- Install FLAC tools (if not already installed)
+- Add to your PATH
+
+**Manual Install:**
+
+1. Download the latest `letitrip_windows_amd64.zip` from [Releases](https://github.com/cloudboy-jh/letitrip/releases)
+2. Extract `letitrip.exe` to a folder (e.g., `C:\Program Files\letitrip\`)
+3. Add that folder to your PATH
+4. Install FLAC tools: `winget install Xiph.FLAC`
+
+**Build from Source (for developers):**
+
 ```powershell
-$env:Path += ";$env:USERPROFILE\go\bin"
+git clone https://github.com/cloudboy-jh/letitrip.git
+cd letitrip\letitrip
+go build -o letitrip.exe .
 ```
 
 **Requirements:**
 
-- Go 1.21+ (for installation only)
 - FLAC tools (flac.exe + metaflac.exe) - installed via winget or from [https://xiph.org/flac/download.html](https://xiph.org/flac/download.html)
 
 **Note:** The Windows version uses native Windows CD-ROM APIs for disc reading and ripping - no external CD ripping tools needed!
@@ -44,34 +54,6 @@ $env:Path += ";$env:USERPROFILE\go\bin"
 curl -fsSL https://raw.githubusercontent.com/cloudboy-jh/letitrip/main/server/setup.sh | bash
 sudo mount /dev/sda1 /mnt/music
 cd /opt/letitrip && docker compose up -d
-```
-
-## Troubleshooting
-
-**"executable file not found" or "cdparanoia not found":**
-
-This means `go install` grabbed an old cached version. Force a clean reinstall:
-
-```powershell
-# Remove cached version
-go clean -i github.com/cloudboy-jh/letitrip/letitrip
-
-# Clear Go module cache
-go clean -modcache
-
-# Reinstall from latest source
-go install github.com/cloudboy-jh/letitrip/letitrip@latest
-
-# Verify Windows version is installed
-where letitrip
-# Should show: C:\Users\<YourName>\go\bin\letitrip.exe
-```
-
-**"letitrip is not recognized":**
-
-Add Go's bin directory to your PATH:
-```powershell
-$env:Path += ";$env:USERPROFILE\go\bin"
 ```
 
 ## Usage
