@@ -17,4 +17,5 @@ archives:
     name_template: "{{ .ProjectName }}_windows_amd64"
 
 release:
-  draft: true
+  draft: false
+  prerelease: auto
