@@ -7,10 +7,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/cloudboy-jh/letitrip/ripper/internal/config"
-	"github.com/cloudboy-jh/letitrip/ripper/internal/disc"
-	"github.com/cloudboy-jh/letitrip/ripper/internal/metadata"
-	"github.com/cloudboy-jh/letitrip/ripper/internal/organize"
+	"github.com/cloudboy-jh/letitrip/letitrip/internal/config"
+	"github.com/cloudboy-jh/letitrip/letitrip/internal/disc"
+	"github.com/cloudboy-jh/letitrip/letitrip/internal/metadata"
+	"github.com/cloudboy-jh/letitrip/letitrip/internal/organize"
 )
 
 func Execute() {

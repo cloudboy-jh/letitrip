@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cloudboy-jh/letitrip/ripper/internal/disc"
+	"github.com/cloudboy-jh/letitrip/letitrip/internal/disc"
 )
 
 type discResponse struct {

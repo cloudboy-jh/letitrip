@@ -16,12 +16,13 @@ letitrip is a two-part system for ripping CD collections to lossless audio and s
 ### Windows Ripper
 
 ```powershell
-irm https://raw.githubusercontent.com/cloudboy-jh/letitrip/main/install.ps1 | iex
+go install github.com/cloudboy-jh/letitrip/letitrip@latest
 letitrip
 ```
 
 Requirements:
 
+- Go 1.21+ (for installation)
 - `cdparanoia` (CD ripping)
 - `flac` + `metaflac` (encoding and tags)
 
@@ -57,8 +58,7 @@ Music/
 ## Repository Layout
 
 ```
-install.ps1
-ripper/               # Go CLI
+letitrip/             # Go CLI
 server/               # Navidrome setup
 SPEC.md               # Full spec
 ```
