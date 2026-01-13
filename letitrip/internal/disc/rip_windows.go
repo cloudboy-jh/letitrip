@@ -16,7 +16,8 @@ import (
 const (
 	IOCTL_CDROM_RAW_READ = 0x0002403E
 	CD_SECTOR_SIZE       = 2352 // Raw CD audio sector size
-	MAX_RETRIES          = 2    // Number of retry attempts for read errors
+	MAX_TRACK_RETRIES    = 2    // Number of retry attempts for track reads
+	MAX_SECTOR_RETRIES   = 2    // Number of retry attempts for sector reads
 	RETRY_DELAY          = 500  // Milliseconds to wait between retries
 )
 
@@ -26,11 +27,48 @@ type RAW_READ_INFO struct {
 	TrackMode   uint32
 }
 
-func RipTrack(drive string, trackNumber int, outputPath string) error {
+func RipTrack(drive string, trackNumber int, outputPath string, reporter RetryReporter) (RipStats, error) {
+	start := time.Now()
+	var lastErr error
+
+	for attempt := 0; attempt <= MAX_TRACK_RETRIES; attempt++ {
+		if attempt > 0 {
+			if reporter != nil {
+				reporter.OnRetry(RetryEvent{
+					TrackNumber: trackNumber,
+					Attempt:     attempt,
+					MaxAttempts: MAX_TRACK_RETRIES,
+					Scope:       "track",
+				})
+			}
+			time.Sleep(time.Duration(attempt) * RETRY_DELAY * time.Millisecond)
+		}
+
+		bytesWritten, retries, err := ripTrackOnce(drive, trackNumber, outputPath, reporter)
+		if err == nil {
+			if attempt > 0 && reporter != nil {
+				reporter.OnRetrySuccess(RetryEvent{
+					TrackNumber: trackNumber,
+					Attempt:     attempt,
+					MaxAttempts: MAX_TRACK_RETRIES,
+					Scope:       "track",
+				})
+			}
+			return RipStats{Bytes: bytesWritten, Duration: time.Since(start), Retries: retries + attempt}, nil
+		}
+
+		lastErr = err
+		_ = os.Remove(outputPath)
+	}
+
+	return RipStats{Duration: time.Since(start), Retries: MAX_TRACK_RETRIES}, fmt.Errorf("track %d failed after %d attempts: %w", trackNumber, MAX_TRACK_RETRIES+1, lastErr)
+}
+
+func ripTrackOnce(drive string, trackNumber int, outputPath string, reporter RetryReporter) (int64, int, error) {
 	// First, read TOC to get track information
 	toc, err := ReadTOC(drive)
 	if err != nil {
-		return fmt.Errorf("failed to read TOC: %v", err)
+		return 0, 0, fmt.Errorf("failed to read TOC: %w", err)
 	}
 
 	// Find the track
@@ -42,7 +80,7 @@ func RipTrack(drive string, trackNumber int, outputPath string) error {
 		}
 	}
 	if track == nil {
-		return fmt.Errorf("track %d not found", trackNumber)
+		return 0, 0, fmt.Errorf("track %d not found", trackNumber)
 	}
 
 	// Open the CD drive
@@ -57,20 +95,20 @@ func RipTrack(drive string, trackNumber int, outputPath string) error {
 		0,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to open drive: %v", err)
+		return 0, 0, fmt.Errorf("failed to open drive %s: %w", devicePath, err)
 	}
 	defer syscall.CloseHandle(handle)
 
 	// Create output file
 	outFile, err := os.Create(outputPath)
 	if err != nil {
-		return fmt.Errorf("failed to create output file: %v", err)
+		return 0, 0, fmt.Errorf("failed to create output file: %w", err)
 	}
 	defer outFile.Close()
 
 	// Write WAV header
 	if err := writeWAVHeader(outFile, track.LengthLBA); err != nil {
-		return fmt.Errorf("failed to write WAV header: %v", err)
+		return 0, 0, fmt.Errorf("failed to write WAV header: %w", err)
 	}
 
 	// Read and write audio data
@@ -80,6 +118,9 @@ func RipTrack(drive string, trackNumber int, outputPath string) error {
 	const sectorsPerRead = 26 // Read ~60KB at a time
 	buffer := make([]byte, sectorsPerRead*CD_SECTOR_SIZE)
 
+	var bytesWritten int64
+	var totalRetries int
+
 	for sectorsRead := 0; sectorsRead < sectorsToRead; {
 		currentSectors := sectorsPerRead
 		if sectorsRead+currentSectors > sectorsToRead {
@@ -87,51 +128,60 @@ func RipTrack(drive string, trackNumber int, outputPath string) error {
 		}
 
 		// Read sectors with retry logic
-		bytesRead, err := readCDSectorsWithRetry(handle, startLBA+sectorsRead, currentSectors, buffer, trackNumber, sectorsRead)
+		bytesRead, retries, err := readCDSectorsWithRetry(handle, startLBA+sectorsRead, currentSectors, buffer, trackNumber, sectorsRead, reporter)
+		totalRetries += retries
 		if err != nil {
-			return fmt.Errorf("failed to read track %d after %d retries at sector %d: %v", trackNumber, MAX_RETRIES, sectorsRead, err)
+			return bytesWritten, totalRetries, fmt.Errorf("failed to read track %d at sector %d: %w", trackNumber, sectorsRead, err)
 		}
 
 		// Write to output file
 		if _, err := outFile.Write(buffer[:bytesRead]); err != nil {
-			return fmt.Errorf("failed to write audio data: %v", err)
+			return bytesWritten, totalRetries, fmt.Errorf("failed to write audio data: %w", err)
 		}
 
+		bytesWritten += int64(bytesRead)
 		sectorsRead += currentSectors
 	}
 
-	return nil
+	return bytesWritten, totalRetries, nil
 }
 
 // readCDSectorsWithRetry attempts to read CD sectors with retry logic for scratched discs
-func readCDSectorsWithRetry(handle syscall.Handle, startLBA int, sectorCount int, buffer []byte, trackNumber int, sectorOffset int) (int, error) {
+func readCDSectorsWithRetry(handle syscall.Handle, startLBA int, sectorCount int, buffer []byte, trackNumber int, sectorOffset int, reporter RetryReporter) (int, int, error) {
 	var lastErr error
 
-	for attempt := 0; attempt <= MAX_RETRIES; attempt++ {
+	for attempt := 0; attempt <= MAX_SECTOR_RETRIES; attempt++ {
 		if attempt > 0 {
-			// Log retry attempt to console
-			fmt.Fprintf(os.Stderr, "⚠️  Track %d: Read error at sector %d (attempt %d/%d) - retrying...\n",
-				trackNumber, sectorOffset, attempt, MAX_RETRIES)
-			time.Sleep(RETRY_DELAY * time.Millisecond)
+			if reporter != nil {
+				reporter.OnRetry(RetryEvent{
+					TrackNumber: trackNumber,
+					Attempt:     attempt,
+					MaxAttempts: MAX_SECTOR_RETRIES,
+					Sector:      sectorOffset,
+					Scope:       "sector",
+				})
+			}
+			time.Sleep(time.Duration(attempt) * RETRY_DELAY * time.Millisecond)
 		}
 
 		bytesRead, err := readCDSectors(handle, startLBA, sectorCount, buffer)
 		if err == nil {
-			if attempt > 0 {
-				// Log successful retry
-				fmt.Fprintf(os.Stderr, "✓ Track %d: Successfully read sector %d on attempt %d\n",
-					trackNumber, sectorOffset, attempt+1)
+			if attempt > 0 && reporter != nil {
+				reporter.OnRetrySuccess(RetryEvent{
+					TrackNumber: trackNumber,
+					Attempt:     attempt,
+					MaxAttempts: MAX_SECTOR_RETRIES,
+					Sector:      sectorOffset,
+					Scope:       "sector",
+				})
 			}
-			return bytesRead, nil
+			return bytesRead, attempt, nil
 		}
 
-		lastErr = err
+		lastErr = fmt.Errorf("sector %d lba %d read failed: %w", sectorOffset, startLBA, err)
 	}
 
-	// All retries failed
-	fmt.Fprintf(os.Stderr, "✗ Track %d: Failed to read sector %d after %d attempts: %v\n",
-		trackNumber, sectorOffset, MAX_RETRIES+1, lastErr)
-	return 0, lastErr
+	return 0, MAX_SECTOR_RETRIES, lastErr
 }
 
 func readCDSectors(handle syscall.Handle, startLBA int, sectorCount int, buffer []byte) (int, error) {

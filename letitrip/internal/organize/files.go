@@ -2,9 +2,11 @@ package organize
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/cloudboy-jh/letitrip/letitrip/internal/config"
 	"github.com/cloudboy-jh/letitrip/letitrip/internal/disc"
@@ -12,7 +14,9 @@ import (
 	"github.com/cloudboy-jh/letitrip/letitrip/internal/metadata"
 )
 
-func RipAndOrganize(drive string, cfg config.Config, toc disc.TOC, release metadata.Release) error {
+const cddaBytesPerSecond = 176400
+
+func RipAndOrganize(drive string, cfg config.Config, toc disc.TOC, release metadata.Release, reporter ProgressReporter) error {
 	if len(release.Tracks) == 0 {
 		return fmt.Errorf("no tracks available")
 	}
@@ -30,6 +34,14 @@ func RipAndOrganize(drive string, cfg config.Config, toc disc.TOC, release metad
 		return err
 	}
 
+	logger, logPath, closeLogger, err := newRipLogger(outputDir)
+	if err != nil {
+		return err
+	}
+	defer closeLogger()
+
+	retryReporter := newRetryReporter(reporter, logger)
+
 	trackMap := make(map[int]metadata.Track)
 	for _, track := range release.Tracks {
 		trackMap[track.Number] = track
@@ -39,53 +51,118 @@ func RipAndOrganize(drive string, cfg config.Config, toc disc.TOC, release metad
 	successCount := 0
 	totalTracks := len(toc.Tracks)
 
-	for _, track := range toc.Tracks {
+	for index, track := range toc.Tracks {
 		trackMeta, ok := trackMap[track.Number]
 		if !ok {
 			trackMeta = metadata.Track{Number: track.Number, Title: fmt.Sprintf("Track %02d", track.Number)}
 		}
 
-		fmt.Fprintf(os.Stdout, "\n🎵 Ripping track %d/%d: %s\n", track.Number, totalTracks, trackMeta.Title)
+		report(reporter, logger, ProgressEvent{
+			Type:        EventTrackStart,
+			TrackNumber: trackMeta.Number,
+			Title:       trackMeta.Title,
+			Index:       index + 1,
+			Total:       totalTracks,
+		})
+
+		report(reporter, logger, ProgressEvent{
+			Type:        EventTrackStage,
+			TrackNumber: trackMeta.Number,
+			Title:       trackMeta.Title,
+			Stage:       "ripping",
+		})
 
 		wavPath := filepath.Join(tempDir, fmt.Sprintf("track-%02d.wav", track.Number))
-		if err := disc.RipTrack(drive, track.Number, wavPath); err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Failed to rip track %d (%s): %v\n", track.Number, trackMeta.Title, err)
+		ripStats, err := disc.RipTrack(drive, track.Number, wavPath, retryReporter)
+		if err != nil {
+			report(reporter, logger, ProgressEvent{
+				Type:        EventTrackFail,
+				TrackNumber: trackMeta.Number,
+				Title:       trackMeta.Title,
+				Stage:       "ripping",
+				Error:       err.Error(),
+			})
 			failedTracks = append(failedTracks, track.Number)
 			continue
 		}
+
+		speed := formatSpeed(ripStats.Bytes, ripStats.Duration)
+
+		report(reporter, logger, ProgressEvent{
+			Type:        EventTrackStage,
+			TrackNumber: trackMeta.Number,
+			Title:       trackMeta.Title,
+			Stage:       "encoding",
+		})
 
 		fileName := fmt.Sprintf("%02d - %s.flac", trackMeta.Number, sanitize(trackMeta.Title))
 		flacPath := filepath.Join(outputDir, fileName)
 
-		fmt.Fprintf(os.Stdout, "   Encoding to FLAC...\n")
 		if err := encode.EncodeFlac(wavPath, flacPath); err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Failed to encode track %d (%s): %v\n", track.Number, trackMeta.Title, err)
+			report(reporter, logger, ProgressEvent{
+				Type:        EventTrackFail,
+				TrackNumber: trackMeta.Number,
+				Title:       trackMeta.Title,
+				Stage:       "encoding",
+				Error:       err.Error(),
+			})
 			failedTracks = append(failedTracks, track.Number)
 			continue
 		}
 
-		fmt.Fprintf(os.Stdout, "   Adding metadata tags...\n")
+		report(reporter, logger, ProgressEvent{
+			Type:        EventTrackStage,
+			TrackNumber: trackMeta.Number,
+			Title:       trackMeta.Title,
+			Stage:       "tagging",
+		})
+
 		if err := metadata.ApplyTags(flacPath, release, trackMeta); err != nil {
-			fmt.Fprintf(os.Stderr, "⚠️  Warning: Failed to tag track %d (%s): %v\n", track.Number, trackMeta.Title, err)
-			// Don't mark as failed - the file is still usable without tags
+			report(reporter, logger, ProgressEvent{
+				Type:        EventWarning,
+				TrackNumber: trackMeta.Number,
+				Title:       trackMeta.Title,
+				Stage:       "tagging",
+				Error:       err.Error(),
+				Message:     "tagging failed; file left untagged",
+			})
 		}
 
-		fmt.Fprintf(os.Stdout, "✓ Track %d complete: %s\n", track.Number, fileName)
+		report(reporter, logger, ProgressEvent{
+			Type:        EventTrackDone,
+			TrackNumber: trackMeta.Number,
+			Title:       trackMeta.Title,
+			Stage:       "done",
+			Speed:       speed,
+			Retries:     ripStats.Retries,
+			Message:     fileName,
+		})
 		successCount++
 	}
 
-	// Print summary
-	fmt.Fprintf(os.Stdout, "\n═══════════════════════════════════════\n")
-	fmt.Fprintf(os.Stdout, "Ripping complete: %d/%d tracks successful\n", successCount, totalTracks)
+	report(reporter, logger, ProgressEvent{
+		Type:    EventSummary,
+		Total:   totalTracks,
+		Message: fmt.Sprintf("Ripping complete: %d/%d tracks successful", successCount, totalTracks),
+		Error:   fmt.Sprintf("failed tracks: %v", failedTracks),
+		LogPath: logPath,
+	})
 
 	if len(failedTracks) > 0 {
-		fmt.Fprintf(os.Stderr, "\n⚠️  Failed tracks: %v\n", failedTracks)
-		fmt.Fprintf(os.Stderr, "These tracks may be scratched or unreadable.\n")
-		fmt.Fprintf(os.Stderr, "Try cleaning the disc and running again.\n")
 		return fmt.Errorf("failed to rip %d track(s): %v", len(failedTracks), failedTracks)
 	}
 
 	return nil
+}
+
+func formatSpeed(bytes int64, duration time.Duration) string {
+	if bytes <= 0 || duration <= 0 {
+		return ""
+	}
+	bytesPerSecond := float64(bytes) / duration.Seconds()
+	speedX := bytesPerSecond / cddaBytesPerSecond
+	mbPerSecond := bytesPerSecond / 1_000_000
+	return fmt.Sprintf("%.2fx (%.2f MB/s)", speedX, mbPerSecond)
 }
 
 func sanitize(value string) string {
@@ -103,4 +180,13 @@ func sanitize(value string) string {
 	)
 	value = replacer.Replace(value)
 	return strings.TrimSpace(value)
+}
+
+func report(reporter ProgressReporter, logger *log.Logger, event ProgressEvent) {
+	if reporter != nil {
+		reporter.Report(event)
+	}
+	if logger != nil {
+		logger.Printf("event=%s track=%d title=%q stage=%s retries=%d speed=%s message=%q error=%q", event.Type, event.TrackNumber, event.Title, event.Stage, event.Retries, event.Speed, event.Message, event.Error)
+	}
 }

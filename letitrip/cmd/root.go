@@ -5,12 +5,19 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
+	"runtime/pprof"
 	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"golang.org/x/term"
 
 	"github.com/cloudboy-jh/letitrip/letitrip/internal/config"
 	"github.com/cloudboy-jh/letitrip/letitrip/internal/disc"
 	"github.com/cloudboy-jh/letitrip/letitrip/internal/metadata"
 	"github.com/cloudboy-jh/letitrip/letitrip/internal/organize"
+	"github.com/cloudboy-jh/letitrip/letitrip/internal/ui"
 )
 
 func Execute() {
@@ -24,6 +31,9 @@ func Execute() {
 	output := fs.String("output", "", "Output directory")
 	yes := fs.Bool("yes", false, "Skip confirmation prompts")
 	info := fs.Bool("info", false, "Show disc info without ripping")
+	plain := fs.Bool("plain", false, "Disable the TUI dashboard")
+	cpuProfile := fs.String("cpuprofile", "", "Write CPU profile to file")
+	memProfile := fs.String("memprofile", "", "Write heap profile to file")
 	fs.Parse(args)
 
 	cfg, err := config.Load()
@@ -34,10 +44,41 @@ func Execute() {
 
 	if *output != "" {
 		cfg.OutputDir = *output
+	} else {
+		defaultOutput := cfg.OutputDir
+		if defaultOutput == "" {
+			defaultOutput = config.DefaultOutputDir()
+		}
+		if !*yes && !*info && term.IsTerminal(int(os.Stdin.Fd())) {
+			selected, err := promptOutputDir(defaultOutput)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "Failed to read output directory:", err)
+				os.Exit(1)
+			}
+			if selected != "" {
+				cfg.OutputDir = selected
+			} else {
+				cfg.OutputDir = defaultOutput
+			}
+		} else {
+			cfg.OutputDir = defaultOutput
+		}
 	}
 
-	if cfg.OutputDir == "" {
-		cfg.OutputDir = config.DefaultOutputDir()
+	if *cpuProfile != "" {
+		if err := startCPUProfile(*cpuProfile); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to start CPU profile:", err)
+			os.Exit(1)
+		}
+		defer stopCPUProfile()
+	}
+
+	if *memProfile != "" {
+		defer func() {
+			if err := writeHeapProfile(*memProfile); err != nil {
+				fmt.Fprintln(os.Stderr, "Failed to write heap profile:", err)
+			}
+		}()
 	}
 
 	drive := cfg.Drive
@@ -80,9 +121,32 @@ func Execute() {
 		}
 	}
 
-	if err := organize.RipAndOrganize(drive, cfg, toc, meta); err != nil {
-		fmt.Fprintln(os.Stderr, "Ripping failed:", err)
-		os.Exit(1)
+	useTUI := !*plain && term.IsTerminal(int(os.Stdout.Fd()))
+	if useTUI {
+		events := make(chan organize.ProgressEvent, 100)
+		reporter := organize.NewChannelReporter(events)
+		errCh := make(chan error, 1)
+
+		go func() {
+			errCh <- organize.RipAndOrganize(drive, cfg, toc, meta, reporter)
+			close(events)
+		}()
+
+		program := tea.NewProgram(ui.NewModel(meta, discID, events))
+		if err := program.Start(); err != nil {
+			fmt.Fprintln(os.Stderr, "TUI failed:", err)
+		}
+
+		if err := <-errCh; err != nil {
+			fmt.Fprintln(os.Stderr, "Ripping failed:", err)
+			os.Exit(1)
+		}
+	} else {
+		reporter := organize.NewCLIReporter(os.Stdout, os.Stderr)
+		if err := organize.RipAndOrganize(drive, cfg, toc, meta, reporter); err != nil {
+			fmt.Fprintln(os.Stderr, "Ripping failed:", err)
+			os.Exit(1)
+		}
 	}
 
 	if cfg.EjectOnComplete {
@@ -131,6 +195,35 @@ func confirm(prompt string) bool {
 	return response == "y" || response == "yes"
 }
 
+func promptOutputDir(defaultOutput string) (string, error) {
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Fprintf(os.Stdout, "Output directory [%s]: ", defaultOutput)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		return "", err
+	}
+	response = strings.TrimSpace(response)
+	if response == "" {
+		return "", nil
+	}
+	if strings.HasPrefix(response, "~") {
+		if home, err := os.UserHomeDir(); err == nil {
+			remainder := strings.TrimPrefix(response, "~")
+			remainder = strings.TrimPrefix(remainder, string(os.PathSeparator))
+			remainder = strings.TrimPrefix(remainder, "/")
+			response = filepath.Join(home, remainder)
+		}
+	}
+	if !filepath.IsAbs(response) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", err
+		}
+		response = filepath.Join(cwd, response)
+	}
+	return filepath.Clean(response), nil
+}
+
 func printInfo(meta metadata.Release, discID string) {
 	fmt.Fprintf(os.Stdout, "Disc ID: %s\n", discID)
 	fmt.Fprintf(os.Stdout, "Artist: %s\n", meta.Artist)
@@ -142,4 +235,38 @@ func printInfo(meta metadata.Release, discID string) {
 	for _, track := range meta.Tracks {
 		fmt.Fprintf(os.Stdout, "  %02d - %s\n", track.Number, track.Title)
 	}
+}
+
+var cpuProfileFile *os.File
+
+func startCPUProfile(path string) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	if err := pprof.StartCPUProfile(file); err != nil {
+		_ = file.Close()
+		return err
+	}
+	cpuProfileFile = file
+	return nil
+}
+
+func stopCPUProfile() {
+	if cpuProfileFile == nil {
+		return
+	}
+	pprof.StopCPUProfile()
+	_ = cpuProfileFile.Close()
+	cpuProfileFile = nil
+}
+
+func writeHeapProfile(path string) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	runtime.GC()
+	return pprof.WriteHeapProfile(file)
 }
