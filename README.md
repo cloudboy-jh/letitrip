@@ -4,6 +4,21 @@
 
 Let it rip—turn your CDs into a personal Spotify powered by a Raspberry Pi.
 
+<p align="center">
+  <a href="https://github.com/cloudboy-jh/letitrip/commits/main">
+    <img src="https://img.shields.io/github/last-commit/cloudboy-jh/letitrip?style=flat-square&color=red" alt="GitHub last commit" />
+  </a>
+  <a href="https://opensource.org/licenses/MIT">
+    <img src="https://img.shields.io/badge/License-MIT-red.svg?style=flat-square" alt="License: MIT" />
+  </a>
+  <a href="https://go.dev/">
+    <img src="https://img.shields.io/badge/Made%20with-Go-red?style=flat-square&logo=go" alt="Made with Go" />
+  </a>
+  <a href="https://github.com/cloudboy-jh/letitrip/pulls">
+    <img src="https://img.shields.io/badge/PRs-welcome-red.svg?style=flat-square" alt="PRs Welcome" />
+  </a>
+</p>
+
 ## Overview
 
 letitrip is a two-part system for ripping CD collections to lossless audio and streaming them on a home network.
